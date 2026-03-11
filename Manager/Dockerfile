@@ -1,4 +1,3 @@
-FROM ubuntu:latest
 LABEL authors="JsJustS"
 
 FROM gradle:9.3.1-jdk21 AS build
