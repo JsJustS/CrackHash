@@ -2,7 +2,9 @@ package com.example.manager.services
 
 import com.example.manager.services.model.SubTaskModel
 import com.example.manager.services.model.TaskModel
+import com.example.manager.services.model.WorkerResultModel
 import org.slf4j.LoggerFactory
+import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Service
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -51,7 +53,8 @@ class TaskManagerService(
                 maxLength = task.maxLength,
                 alphabet = task.alphabet,
                 partStart = partStart,
-                partEnd = partEnd
+                partEnd = partEnd,
+                progressAmount = 100.0 / workersCount
             )
             queueSubTask(subtask)
         }
@@ -76,5 +79,20 @@ class TaskManagerService(
 
     fun getTask(requestId: UUID): TaskModel? {
         return tasks[requestId]
+    }
+
+    fun applySubResult(workerResultModel: WorkerResultModel): Boolean {
+        val worker = workerManagerService.getWorkerById(workerResultModel.workerId)
+        worker ?: return false
+        val task = getTask(workerResultModel.requestId)
+        task ?: return false
+        val subTask = worker.currentSubTask
+        subTask ?: return false
+
+        task.result.addAll(workerResultModel.result)
+        task.progress += subTask.progressAmount
+
+        worker.currentSubTask = null
+        return true
     }
 }

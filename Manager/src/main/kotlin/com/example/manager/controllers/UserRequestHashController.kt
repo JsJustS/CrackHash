@@ -27,7 +27,7 @@ class UserRequestHashController(
         )
         return ResponseEntity.ok(
             HashTaskApprovedResponseDTO(
-                requestId = UUID.randomUUID()
+                requestId = task.requestId
             )
         )
     }

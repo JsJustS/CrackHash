@@ -25,7 +25,7 @@ class UserRequestStatusController(
             HashTaskStatusResponseDTO(
                 status = task.status.toString(),
                 progress = task.progress,
-                data = task.result
+                data = if (task.result.isEmpty()) null else task.result.toList()
             )
         )
     }

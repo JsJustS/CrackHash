@@ -9,5 +9,6 @@ class SubTaskModel (
     val maxLength: Int,
     val alphabet: String,
     val partStart: Long,
-    val partEnd: Long
+    val partEnd: Long,
+    val progressAmount: Double
 )
