@@ -11,7 +11,8 @@ import java.util.UUID
 
 @Service
 class HeartbeatService(
-    private val workerManagerService: WorkerManagerService
+    private val workerManagerService: WorkerManagerService,
+    private val taskManagerService: TaskManagerService
 ) {
     private val logger = LoggerFactory.getLogger(HeartbeatService::class.java)
 
@@ -38,6 +39,7 @@ class HeartbeatService(
             logger.warn("${worker.id} is dead")
             worker.status = WorkerStatus.INACTIVE
             workerManagerService.removeWorker(worker.id)
+            worker.currentSubTask?.let(taskManagerService::queueSubTask)
         }
     }
 

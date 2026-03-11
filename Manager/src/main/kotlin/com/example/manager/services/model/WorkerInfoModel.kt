@@ -10,5 +10,6 @@ class WorkerInfoModel (
     val port: Int,
     val registeredAt: LocalDateTime = LocalDateTime.now(),
     var lastHeartbeat: LocalDateTime = LocalDateTime.now(),
-    var status: WorkerStatus
+    var status: WorkerStatus,
+    var currentSubTask: SubTaskModel? = null
 )

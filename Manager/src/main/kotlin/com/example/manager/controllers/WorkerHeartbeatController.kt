@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping($$"${worker.heartbeat.endpoint}")
+@RequestMapping($$"${endpoint.worker.heartbeat}")
 class WorkerHeartbeatController(
     private val heartbeatService: HeartbeatService
 ) {

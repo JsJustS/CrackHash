@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
 @RestController
-@RequestMapping($$"${worker.registration.endpoint}")
+@RequestMapping($$"${endpoint.worker.registration}")
 class WorkerRegistrationController(
     private val workerManager: WorkerManagerService
 ) {

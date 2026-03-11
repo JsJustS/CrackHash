@@ -4,12 +4,13 @@ import com.example.manager.services.model.WorkerInfoModel
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class WorkerManagerService {
 
     private val logger = LoggerFactory.getLogger(WorkerManagerService::class.java)
-    private val workers = mutableListOf<WorkerInfoModel>()
+    private val workers = ConcurrentHashMap<UUID, WorkerInfoModel>()
 
     fun registerWorker(
         workerAddress: String,
@@ -20,24 +21,20 @@ class WorkerManagerService {
             port = workerPort,
             status = WorkerStatus.ACTIVE
         )
-        workers.add(workerInfo)
+        workers[workerInfo.id] = workerInfo
         logger.info("Registered worker ${workerInfo.id} with address $workerAddress:$workerPort");
         return workerInfo
     }
 
     fun getWorkerById(id: UUID): WorkerInfoModel? {
-        return workers.firstOrNull { it.id == id }
+        return workers[id]
     }
 
     fun getWorkers(): List<WorkerInfoModel> {
-        return workers
+        return workers.values.toList()
     }
 
-    fun removeWorker(id: UUID) {
-        val workerToBeRemoved = workers.firstOrNull { it.id == id }
-        workerToBeRemoved?.let {
-            workers.remove(it)
-            //todo: remove task and push it in queue
-        }
+    fun removeWorker(id: UUID): WorkerInfoModel? {
+        return workers.remove(id)
     }
 }
