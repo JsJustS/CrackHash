@@ -1,4 +1,4 @@
-package com.example.Manager
+package com.example.manager
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
