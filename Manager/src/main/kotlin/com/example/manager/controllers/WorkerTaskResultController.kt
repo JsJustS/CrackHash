@@ -27,6 +27,7 @@ class WorkerTaskResultController(
             )
         )
         if (status) {
+            taskManagerService.sendOutSubTasks()
             return ResponseEntity.ok().build()
         }
         return ResponseEntity.notFound().build()

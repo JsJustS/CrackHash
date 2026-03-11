@@ -1,11 +1,16 @@
 package com.example.manager.services
 
+import com.example.manager.controllers.dto.SubTaskRequestDTO
 import com.example.manager.services.model.SubTaskModel
 import com.example.manager.services.model.TaskModel
+import com.example.manager.services.model.WorkerInfoModel
 import com.example.manager.services.model.WorkerResultModel
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
+import org.springframework.web.client.RestTemplate
+import org.springframework.web.client.getForEntity
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -32,6 +37,8 @@ class TaskManagerService(
         tasks.putIfAbsent(task.requestId, task)
         logger.info("Created task $task: hash $hash and maxLength $maxLength")
         subdivideTask(task)
+        logger.info("Subdivided task!")
+        sendOutSubTasks()
         return task
     }
 
@@ -101,5 +108,39 @@ class TaskManagerService(
         worker.currentSubTask = null
         logger.info("Applied subResult for ${task.requestId} (${task.progress}/100.0)")
         return true
+    }
+
+    fun sendOutSubTasks() {
+        val workers = workerManagerService.getWorkers()
+        var subTask = queue.poll()
+        for (worker in workers) {
+            if (worker.currentSubTask == null && subTask != null) {
+                val status = sendSubTaskToWorker(subTask, worker)
+                if (status) {
+                    subTask = queue.poll()
+                }
+            }
+        }
+    }
+
+    fun sendSubTaskToWorker(
+        subTask: SubTaskModel,
+        worker: WorkerInfoModel
+    ): Boolean {
+        val response = RestTemplate().postForEntity(
+            "http://worker:${worker.port}" + $$"${endpoint.worker.internal}",
+            SubTaskRequestDTO(
+                subTaskId = subTask.requestId,
+                requestId = subTask.requestId,
+                hash = subTask.hash,
+                maxLength = subTask.maxLength,
+                alphabet = subTask.alphabet,
+                partStart = subTask.partStart,
+                partEnd = subTask.partEnd
+            ),
+            Void::class.java
+        )
+        logger.info("Sent subTask ${subTask.requestId} to ${worker.id} (${worker.port}) [${response.statusCode.value()}]")
+        return response.statusCode.is2xxSuccessful
     }
 }
