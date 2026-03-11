@@ -30,9 +30,8 @@ class TaskManagerService(
             alphabet = alphabet,
         )
         tasks.putIfAbsent(task.requestId, task)
+        logger.info("Created task $task: hash $hash and maxLength $maxLength")
         subdivideTask(task)
-
-        logger.info("Created task $task")
         return task
     }
 
@@ -41,8 +40,14 @@ class TaskManagerService(
             task.alphabet,
             task.maxLength
         )
-        val workersCount = workerManagerService.getWorkers().count()
+        var workersCount = workerManagerService.getWorkers().count()
+        logger.info("Workers count $workersCount")
+        if (workersCount == 0) {
+            logger.warn("No workers found! No subdivision applied (the whole task will be forced onto first worker).")
+            workersCount = 1
+        }
         val chunkSize = totalCombinations / workersCount
+        logger.info("Chunk size $chunkSize")
 
         for (i in 0 until workersCount) {
             val partStart = i * chunkSize
@@ -57,6 +62,7 @@ class TaskManagerService(
                 progressAmount = 100.0 / workersCount
             )
             queueSubTask(subtask)
+            logger.info("Created subtask $subtask: from $partStart to $partEnd")
         }
     }
 
@@ -93,6 +99,7 @@ class TaskManagerService(
         task.progress += subTask.progressAmount
 
         worker.currentSubTask = null
+        logger.info("Applied subResult for ${task.requestId} (${task.progress}/100.0)")
         return true
     }
 }

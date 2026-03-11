@@ -3,6 +3,7 @@ package com.example.manager.controllers
 import com.example.manager.controllers.dto.HashRequestDTO
 import com.example.manager.controllers.dto.HashTaskApprovedResponseDTO
 import com.example.manager.services.TaskManagerService
+import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -16,10 +17,13 @@ class UserRequestHashController(
     private val taskManagerService: TaskManagerService
 ) {
 
+    private val logger = LoggerFactory.getLogger(UserRequestHashController::class.java)
+
     @PostMapping
     fun approveRequest(
         @RequestBody hashRequestDTO: HashRequestDTO
     ): ResponseEntity<HashTaskApprovedResponseDTO> {
+        logger.info("Got request ${hashRequestDTO.hash} with maxLength ${hashRequestDTO.maxLength}")
         val task = taskManagerService.createTask(
             hashRequestDTO.hash,
             hashRequestDTO.maxLength,
