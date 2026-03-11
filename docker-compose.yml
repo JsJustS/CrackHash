@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  manager:
+    build:
+      context: ./Manager
+      dockerfile: Dockerfile
+    container_name: crackhash-manager
+    ports:
+      - "8080:8080"
+    environment:
+      - WORKER_REGISTRATION_ENDPOINT=/api/workers/register
+    networks:
+      - crackhash-network
+
+  worker:
+    build:
+      context: ./Worker
+      dockerfile: Dockerfile
+    environment:
+      - MANAGER_URL=http://manager:8080
+    networks:
+      - crackhash-network
+    depends_on:
+      manager:
+        condition: service_started
+    # docker-compose up --scale worker=5
+
+networks:
+  crackhash-network:
+    driver: bridge
