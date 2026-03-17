@@ -1,0 +1,120 @@
+package com.example.worker.services
+
+import com.example.worker.controllers.dto.WorkerRegistrationResponseDTO
+import com.example.worker.controllers.dto.WorkerResultRequestDTO
+import com.example.worker.services.models.SubTaskModel
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.web.client.RestTemplate
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentSkipListSet
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
+
+@Service
+class SubTaskManagerService(
+    private val identificationManagerService: IdentificationManagerService
+) {
+    private val restTemplate = RestTemplate()
+    private val logger = LoggerFactory.getLogger(this::class.java)
+    private var currentSubTask: AtomicReference<SubTaskModel> = AtomicReference()
+    private val results = ConcurrentSkipListSet<String>()
+
+    fun acceptSubTask(subTaskModel: SubTaskModel): Boolean {
+        if (currentSubTask.get() != null) {
+            logger.warn("Worker has already accepted another task.")
+            return false
+        }
+
+        currentSubTask.set(subTaskModel)
+        val t = Thread(
+            this::executeCurrentTask,
+            "task-executor-thread"
+        )
+        t.isDaemon = true
+        t.start()
+        return true
+    }
+
+    private fun executeCurrentTask() {
+        if (currentSubTask.get() == null) {
+            logger.warn("Worker is trying to execute a task but has not accepted anything yet.")
+            return
+        }
+
+        val alphabet = currentSubTask.get()!!.alphabet.toCharArray()
+        val hash = currentSubTask.get()!!.hash
+        val maxLength = currentSubTask.get()!!.maxLength
+        val partStart = currentSubTask.get()!!.partStart
+        val partEnd = currentSubTask.get()!!.partEnd
+
+        for (length in 1..maxLength) {
+            val totalCombinations = alphabet.size.toDouble().pow(length).toLong()
+            val totalCombinationsUpToLength = getTotalCombinationsUpToLength(alphabet.size, length - 1)
+
+            val startInLength = max(0, partStart - totalCombinationsUpToLength)
+            val endInLength = min(totalCombinations - 1, partEnd - totalCombinationsUpToLength)
+
+            if (startInLength > endInLength || endInLength < 0) continue
+
+            for (iteration in startInLength..endInLength) {
+                val word = generateWord(iteration, length, alphabet)
+                val wordHash = md5(word)
+
+                if (wordHash == hash) {
+                    results.add(word)
+                    // Можно добавить логирование найденного слова
+                    println("Найдено слово: $word для хэша $hash")
+                }
+            }
+        }
+
+        sendResultToManager()
+    }
+
+    private fun getTotalCombinationsUpToLength(alphabetSize: Int, maxLength: Int): Long {
+        var total = 0L
+        for (length in 1..maxLength) {
+            total += alphabetSize.toDouble().pow(length).toLong()
+        }
+        return total
+    }
+
+    private fun generateWord(iteration: Long, length: Int, alphabet: CharArray): String {
+        val word = CharArray(length)
+        var remaining = iteration
+        val alphabetSize = alphabet.size
+
+        for (position in 0 until length) {
+            val charIndex = (remaining % alphabetSize).toInt()
+            word[position] = alphabet[charIndex]
+            remaining /= alphabetSize
+        }
+
+        return String(word)
+    }
+
+    private fun md5(input: String): String {
+        val bytes = MessageDigest.getInstance("MD5").digest(input.toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun sendResultToManager() {
+        val response = restTemplate.postForEntity(
+            "http://manager:"+$$"${manager.port}${endpoint.worker.result}",
+            WorkerResultRequestDTO(
+                identificationManagerService.getId(),
+                currentSubTask.get().requestId,
+                results.toList()
+            ),
+            WorkerRegistrationResponseDTO::class.java
+        )
+        if (response.statusCode.is2xxSuccessful) {
+            currentSubTask.set(null)
+        } else {
+            identificationManagerService.unregister()
+        }
+    }
+}
