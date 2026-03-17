@@ -29,6 +29,7 @@ class SubTaskManagerService(
         }
 
         currentSubTask.set(subTaskModel)
+        results.clear()
         val t = Thread(
             this::executeCurrentTask,
             "task-executor-thread"
@@ -51,6 +52,14 @@ class SubTaskManagerService(
         val partEnd = currentSubTask.get()!!.partEnd
 
         for (length in 1..maxLength) {
+
+            if (!identificationManagerService.isRegistered()) {
+                logger.warn("Became unregistered while performing task, dropping...")
+                currentSubTask.set(null)
+                results.clear()
+                return
+            }
+
             val totalCombinations = alphabet.size.toDouble().pow(length).toLong()
             val totalCombinationsUpToLength = getTotalCombinationsUpToLength(alphabet.size, length - 1)
 
@@ -113,6 +122,7 @@ class SubTaskManagerService(
         )
         if (response.statusCode.is2xxSuccessful) {
             currentSubTask.set(null)
+            results.clear()
         } else {
             identificationManagerService.unregister()
         }

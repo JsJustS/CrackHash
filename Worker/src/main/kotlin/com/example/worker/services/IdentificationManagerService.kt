@@ -26,7 +26,6 @@ class IdentificationManagerService {
 
     fun unregister() {
         registeredWorkerId.set(null)
-        //todo: drop task
         logger.info("Worker unregistered itself.")
     }
 
