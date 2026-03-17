@@ -4,6 +4,7 @@ import com.example.worker.controllers.dto.WorkerRegistrationResponseDTO
 import com.example.worker.controllers.dto.WorkerResultRequestDTO
 import com.example.worker.services.models.SubTaskModel
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
 import java.security.MessageDigest
@@ -21,6 +22,11 @@ class SubTaskManagerService(
     private val logger = LoggerFactory.getLogger(this::class.java)
     private var currentSubTask: AtomicReference<SubTaskModel> = AtomicReference()
     private val results = ConcurrentSkipListSet<String>()
+
+    @Value($$"${manager.port}")
+    private lateinit var managerPort: String
+    @Value($$"${endpoint.worker.result}")
+    private lateinit var resultUrl: String
 
     fun acceptSubTask(subTaskModel: SubTaskModel): Boolean {
         if (currentSubTask.get() != null) {
@@ -74,8 +80,7 @@ class SubTaskManagerService(
 
                 if (wordHash == hash) {
                     results.add(word)
-                    // Можно добавить логирование найденного слова
-                    println("Найдено слово: $word для хэша $hash")
+                    logger.info("$wordHash is valid")
                 }
             }
         }
@@ -112,7 +117,7 @@ class SubTaskManagerService(
 
     private fun sendResultToManager() {
         val response = restTemplate.postForEntity(
-            "http://manager:"+$$"${manager.port}${endpoint.worker.result}",
+            "http://manager:${managerPort}${resultUrl}",
             WorkerResultRequestDTO(
                 identificationManagerService.getId(),
                 currentSubTask.get().requestId,

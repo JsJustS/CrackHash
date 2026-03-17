@@ -4,6 +4,7 @@ import com.example.worker.controllers.dto.WorkerRegistrationRequestDTO
 import com.example.worker.controllers.dto.WorkerRegistrationResponseDTO
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
 import java.util.UUID
@@ -15,10 +16,15 @@ class IdentificationManagerService {
     private var registeredWorkerId: AtomicReference<UUID> = AtomicReference()
     private val logger = LoggerFactory.getLogger(IdentificationManagerService::class.java)
 
+    @Value($$"${manager.port}")
+    private lateinit var managerPort: String
+    @Value($$"${endpoint.worker.registration}")
+    private lateinit var registrationUrl: String
+
     @PostConstruct
     fun onStart() {
-        logger.info("Worker service started!")
         register()
+        logger.info("Worker service started!")
     }
 
     fun isRegistered() = registeredWorkerId.get() != null
@@ -32,7 +38,7 @@ class IdentificationManagerService {
     fun register() {
         logger.info("Running registration...")
         val response = restTemplate.postForEntity(
-            "http://manager:"+$$"${manager.port}${endpoint.worker.internal}",
+            "http://manager:${managerPort}${registrationUrl}",
             WorkerRegistrationRequestDTO(true),
             WorkerRegistrationResponseDTO::class.java
         )

@@ -5,7 +5,6 @@ services:
     build:
       context: ./Manager
       dockerfile: Dockerfile
-    container_name: crackhash-manager
     ports:
       - "8080:8080"
     env_file:
