@@ -21,7 +21,11 @@ class HeartbeatService(
 
     @Scheduled(fixedDelayString = $$"${interval.heartbeat.send}")
     fun sendHeartbeat() {
-        if (!identificationManagerService.isRegistered()) {return}
+        if (!identificationManagerService.isRegistered()) {
+            logger.warn("Sending heartbeat while worker is not registered! Trying to register...")
+            identificationManagerService.register()
+            return
+        }
         val response = restTemplate.postForEntity(
             "http://manager:${managerPort}${heartbeatUrl}",
             WorkerHeartbeatRequestDTO(
