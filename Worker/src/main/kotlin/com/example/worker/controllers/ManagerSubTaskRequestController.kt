@@ -5,6 +5,7 @@ import com.example.worker.services.SubTaskManagerService
 import com.example.worker.services.models.SubTaskModel
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -16,7 +17,7 @@ class ManagerSubTaskRequestController(
 
     @PostMapping
     fun acceptSubTask(
-        subTaskRequestDTO: SubTaskRequestDTO
+        @RequestBody subTaskRequestDTO: SubTaskRequestDTO
     ): ResponseEntity<Void> {
         val status = subTaskManagerService.acceptSubTask(
             SubTaskModel(

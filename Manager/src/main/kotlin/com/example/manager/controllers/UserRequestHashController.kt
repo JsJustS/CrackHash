@@ -4,6 +4,7 @@ import com.example.manager.controllers.dto.HashRequestDTO
 import com.example.manager.controllers.dto.HashTaskApprovedResponseDTO
 import com.example.manager.services.TaskManagerService
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -18,6 +19,8 @@ class UserRequestHashController(
 ) {
 
     private val logger = LoggerFactory.getLogger(UserRequestHashController::class.java)
+    @Value($$"${hash.alphabet}")
+    private lateinit var alphabet: String
 
     @PostMapping
     fun approveRequest(
@@ -27,7 +30,7 @@ class UserRequestHashController(
         val task = taskManagerService.createTask(
             hashRequestDTO.hash,
             hashRequestDTO.maxLength,
-            $$"${hash.alphabet}"
+            alphabet
         )
         return ResponseEntity.ok(
             HashTaskApprovedResponseDTO(

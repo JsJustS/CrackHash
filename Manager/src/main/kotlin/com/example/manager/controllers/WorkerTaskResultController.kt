@@ -6,6 +6,7 @@ import com.example.manager.services.WorkerManagerService
 import com.example.manager.services.model.WorkerResultModel
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -17,7 +18,7 @@ class WorkerTaskResultController(
 
     @PostMapping
     fun acquireResultFromWorker(
-        workerResultRequestDTO: WorkerResultRequestDTO
+        @RequestBody workerResultRequestDTO: WorkerResultRequestDTO
     ): ResponseEntity<Unit> {
         val status = taskManagerService.applySubResult(
             WorkerResultModel(

@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 
 @Service
@@ -26,16 +27,17 @@ class HeartbeatService(
             identificationManagerService.register()
             return
         }
-        val response = restTemplate.postForEntity(
-            "http://manager:${managerPort}${heartbeatUrl}",
-            WorkerHeartbeatRequestDTO(
-                identificationManagerService.getId(),
-            ),
-            Void::class.java
-        )
-        logger.info("Sent heartbeat")
-        if (!response.statusCode.is2xxSuccessful) {
-            logger.error("Could not send heartbeat due to ${response.statusCode}")
+        try {
+            val response = restTemplate.postForEntity(
+                "http://manager:${managerPort}${heartbeatUrl}",
+                WorkerHeartbeatRequestDTO(
+                    identificationManagerService.getId(),
+                ),
+                Void::class.java
+            )
+            logger.info("Sent heartbeat")
+        } catch (e: HttpClientErrorException.NotFound) {
+            logger.error("Could not send heartbeat due to $e")
             identificationManagerService.unregister()
         }
     }

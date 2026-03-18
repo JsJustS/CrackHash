@@ -6,6 +6,7 @@ import com.example.worker.services.models.SubTaskModel
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentSkipListSet
@@ -52,20 +53,13 @@ class SubTaskManagerService(
         }
 
         val alphabet = currentSubTask.get()!!.alphabet.toCharArray()
+        logger.info("alphabet1: $alphabet")
         val hash = currentSubTask.get()!!.hash
         val maxLength = currentSubTask.get()!!.maxLength
         val partStart = currentSubTask.get()!!.partStart
         val partEnd = currentSubTask.get()!!.partEnd
 
         for (length in 1..maxLength) {
-
-            if (!identificationManagerService.isRegistered()) {
-                logger.warn("Became unregistered while performing task, dropping...")
-                currentSubTask.set(null)
-                results.clear()
-                return
-            }
-
             val totalCombinations = alphabet.size.toDouble().pow(length).toLong()
             val totalCombinationsUpToLength = getTotalCombinationsUpToLength(alphabet.size, length - 1)
 
@@ -75,12 +69,20 @@ class SubTaskManagerService(
             if (startInLength > endInLength || endInLength < 0) continue
 
             for (iteration in startInLength..endInLength) {
+                if (!identificationManagerService.isRegistered()) {
+                    logger.warn("Became unregistered while performing task, dropping...")
+                    currentSubTask.set(null)
+                    results.clear()
+                    return
+                }
+
                 val word = generateWord(iteration, length, alphabet)
                 val wordHash = md5(word)
+                // logger.info("$word - $wordHash - $iteration")
 
                 if (wordHash == hash) {
                     results.add(word)
-                    logger.info("$wordHash is valid")
+                    logger.info("$word is valid")
                 }
             }
         }
@@ -101,7 +103,7 @@ class SubTaskManagerService(
         var remaining = iteration
         val alphabetSize = alphabet.size
 
-        for (position in 0 until length) {
+        for (position in length - 1 downTo 0) {
             val charIndex = (remaining % alphabetSize).toInt()
             word[position] = alphabet[charIndex]
             remaining /= alphabetSize
@@ -116,19 +118,22 @@ class SubTaskManagerService(
     }
 
     private fun sendResultToManager() {
-        val response = restTemplate.postForEntity(
-            "http://manager:${managerPort}${resultUrl}",
-            WorkerResultRequestDTO(
-                identificationManagerService.getId(),
-                currentSubTask.get().requestId,
-                results.toList()
-            ),
-            WorkerRegistrationResponseDTO::class.java
-        )
-        if (response.statusCode.is2xxSuccessful) {
-            currentSubTask.set(null)
-            results.clear()
-        } else {
+        try {
+            val response = restTemplate.postForEntity(
+                "http://manager:${managerPort}${resultUrl}",
+                WorkerResultRequestDTO(
+                    identificationManagerService.getId(),
+                    currentSubTask.get().requestId,
+                    results.toList()
+                ),
+                WorkerRegistrationResponseDTO::class.java
+            )
+            if (response.statusCode.is2xxSuccessful) {
+                currentSubTask.set(null)
+                results.clear()
+            }
+        } catch (e: HttpClientErrorException.NotFound) {
+            logger.warn("Could not send result to manager", e)
             identificationManagerService.unregister()
         }
     }

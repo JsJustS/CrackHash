@@ -6,6 +6,7 @@ import java.util.UUID
 
 class WorkerInfoModel (
     val id: UUID = UUID.randomUUID(),
+    val address: String,
     val port: Int,
     val registeredAt: LocalDateTime = LocalDateTime.now(),
     var lastHeartbeat: LocalDateTime = LocalDateTime.now(),

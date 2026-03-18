@@ -16,12 +16,14 @@ class WorkerManagerService {
         workerAddress: String,
         workerPort: Int
     ): WorkerInfoModel {
+        logger.info("Registering worker $workerAddress")
         val workerInfo = WorkerInfoModel(
+            address = workerAddress,
             port = workerPort,
             status = WorkerStatus.ACTIVE
         )
         workers[workerInfo.id] = workerInfo
-        logger.info("Registered worker ${workerInfo.id} with address worker:$workerPort");
+        logger.info("Registered worker ${workerInfo.id} with address $workerAddress:8080");
         return workerInfo
     }
 
