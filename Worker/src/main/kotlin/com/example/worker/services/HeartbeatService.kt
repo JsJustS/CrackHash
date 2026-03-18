@@ -20,7 +20,7 @@ class HeartbeatService(
     @Value($$"${endpoint.worker.heartbeat}")
     private lateinit var heartbeatUrl: String
 
-    @Scheduled(fixedDelayString = $$"${interval.heartbeat.send}")
+    @Scheduled(fixedRateString = $$"${interval.heartbeat.send}")
     fun sendHeartbeat() {
         if (!identificationManagerService.isRegistered()) {
             logger.warn("Sending heartbeat while worker is not registered! Trying to register...")

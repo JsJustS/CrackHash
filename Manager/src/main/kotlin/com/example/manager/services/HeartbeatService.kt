@@ -28,13 +28,11 @@ class HeartbeatService(
 
     @Value($$"${heartbeat.check.interval:30000}")
     private var heartbeatCheckInterval: Long? = null
-    @Scheduled(fixedDelayString = $$"${heartbeat.check.interval:30000}")
+    @Scheduled(fixedRateString = $$"${heartbeat.check.interval:30000}")
     fun checkWorkersHeartbeat() {
         val workers = workerManagerService.getWorkers()
         logger.info("Starting heartbeat check for ${workers.size} workers (interval: ${heartbeatCheckInterval}ms)")
-
-        val currentTime = LocalDateTime.now()
-        val deadWorkers = workers.toList().filter { worker -> isWorkerDead(worker, currentTime) }
+        val deadWorkers = workers.toList().filter { worker -> isWorkerDead(worker, LocalDateTime.now()) }
         deadWorkers.forEach { worker ->
             logger.warn("${worker.id} is dead")
             worker.status = WorkerStatus.INACTIVE
