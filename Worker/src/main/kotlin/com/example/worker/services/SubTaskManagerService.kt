@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 @Service
 class SubTaskManagerService(
@@ -53,11 +54,12 @@ class SubTaskManagerService(
         }
 
         val alphabet = currentSubTask.get()!!.alphabet.toCharArray()
-        logger.info("alphabet1: $alphabet")
         val hash = currentSubTask.get()!!.hash
         val maxLength = currentSubTask.get()!!.maxLength
         val partStart = currentSubTask.get()!!.partStart
         val partEnd = currentSubTask.get()!!.partEnd
+
+        logger.info("Starting execution! Searching for $hash from $partStart to $partEnd")
 
         for (length in 1..maxLength) {
             val totalCombinations = alphabet.size.toDouble().pow(length).toLong()
@@ -78,7 +80,11 @@ class SubTaskManagerService(
 
                 val word = generateWord(iteration, length, alphabet)
                 val wordHash = md5(word)
-                // logger.info("$word - $wordHash - $iteration")
+
+                if ((iteration % 20000) == 0L) {
+                    val percent = (iteration - startInLength) / (endInLength - startInLength).toDouble() * 100
+                    logger.info("$word - $wordHash - $iteration (${percent.roundToInt()}/100%)")
+                }
 
                 if (wordHash == hash) {
                     results.add(word)
