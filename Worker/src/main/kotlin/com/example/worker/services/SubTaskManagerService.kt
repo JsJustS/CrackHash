@@ -109,7 +109,7 @@ class SubTaskManagerService(
         var remaining = iteration
         val alphabetSize = alphabet.size
 
-        for (position in length - 1 downTo 0) {
+        for (position in 0 until length - 1) {
             val charIndex = (remaining % alphabetSize).toInt()
             word[position] = alphabet[charIndex]
             remaining /= alphabetSize
