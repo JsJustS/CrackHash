@@ -84,12 +84,14 @@ class TaskManagerService(
     }
 
     fun queueSubTask(subTask: SubTaskModel) {
+        logger.info("Trying to put subTask to queue: ${tasks[subTask.requestId] != null}")
         if (tasks[subTask.requestId] != null) {
             queue.add(subTask)
         }
     }
 
     fun popSubTask(): SubTaskModel? {
+        logger.info("queue subtask ${queue.size}")
         return queue.poll()
     }
 
@@ -141,6 +143,9 @@ class TaskManagerService(
                     subTask = queue.poll()
                 }
             }
+        }
+        if (subTask != null) {
+            queueSubTask(subTask)
         }
     }
 

@@ -27,8 +27,12 @@ class WorkerManagerService {
             port = workerPort
         )
         workers[workerInfo.id] = workerInfo
-        workerInfo.currentSubTask = taskManagerService?.popSubTask()
         logger.info("Registered worker ${workerInfo.id} with address $workerAddress:8080");
+        val subTask = taskManagerService?.popSubTask()
+        if (subTask != null) {
+            workerInfo.currentSubTask = subTask
+            logger.info("Sending ${workerInfo.id} the subTask with id ${subTask.subTaskId}");
+        }
         return workerInfo
     }
 
