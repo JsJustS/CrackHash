@@ -142,18 +142,23 @@ class SubTaskManagerService(
 
     private fun sendResultToManager() {
         try {
+            val resultsToSend = results.toList()
+            val subTaskId = currentSubTask.get().requestId
+
+            currentSubTask.set(null)
+            results.clear()
+
             val response = restTemplate.postForEntity(
                 "http://manager:${managerPort}${resultUrl}",
                 WorkerResultRequestDTO(
                     identificationManagerService.getId(),
-                    currentSubTask.get().requestId,
-                    results.toList()
+                    subTaskId,
+                    resultsToSend
                 ),
                 WorkerRegistrationResponseDTO::class.java
             )
             if (response.statusCode.is2xxSuccessful) {
-                currentSubTask.set(null)
-                results.clear()
+                logger.info("Successfully sent results for $subTaskId")
             }
         } catch (e: HttpClientErrorException.NotFound) {
             logger.warn("Could not send result to manager", e)

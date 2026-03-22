@@ -62,25 +62,26 @@ class WorkerManagerService {
         return false
     }
 
-//    @Value($$"${heartbeat.check.interval:30000}")
-//    private var heartbeatCheckInterval: Long? = null
-//    @Scheduled(fixedRateString = $$"${heartbeat.check.interval:30000}")
-//    fun checkWorkersHeartbeat() {
-//        val workers: List<WorkerInfoModel> = getWorkers()
-//        logger.info("Starting heartbeat check for ${workers.size} workers (interval: ${heartbeatCheckInterval}ms)")
-//        val deadWorkers = workers.toList().filter { worker -> isWorkerDead(worker, Instant.now()) }
-//        deadWorkers.forEach { worker ->
-//            logger.warn("${worker.id} is dead")
-//            removeWorker(worker.id)
-//            taskManagerService?.let { worker.currentSubTask?.let(it::queueSubTask) }
-//        }
-//    }
-//
-//    private fun isWorkerDead(worker: WorkerInfoModel, currentTime: Instant): Boolean {
-//        if (heartbeatCheckInterval != null) {
-//            val timeSinceLastHeartbeat = Duration.between(worker.lastHeartbeat, currentTime)
-//            return timeSinceLastHeartbeat > Duration.ofMillis(heartbeatCheckInterval!!)
-//        }
-//        return false
-//    }
+    @Value($$"${heartbeat.check.interval:30000}")
+    private var heartbeatCheckInterval: Long? = null
+    @Scheduled(fixedRateString = $$"${heartbeat.check.interval:30000}")
+    fun checkWorkersHeartbeat() {
+        val workers: List<WorkerInfoModel> = getWorkers()
+        logger.info("Starting heartbeat check for ${workers.size} workers (interval: ${heartbeatCheckInterval}ms)")
+        val deadWorkers = workers.toList().filter { worker -> isWorkerDead(worker, Instant.now()) }
+        deadWorkers.forEach { worker ->
+            logger.warn("${worker.id} is dead")
+            removeWorker(worker.id)
+            taskManagerService?.let { worker.currentSubTask?.let(it::queueSubTask) }
+        }
+        taskManagerService?.sendOutSubTasks()
+    }
+
+    private fun isWorkerDead(worker: WorkerInfoModel, currentTime: Instant): Boolean {
+        if (heartbeatCheckInterval != null) {
+            val timeSinceLastHeartbeat = Duration.between(worker.lastHeartbeat, currentTime)
+            return timeSinceLastHeartbeat > Duration.ofMillis(heartbeatCheckInterval!!)
+        }
+        return false
+    }
 }

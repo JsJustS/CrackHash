@@ -10,7 +10,9 @@ import org.apache.coyote.BadRequestException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
+import java.net.NoRouteToHostException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -41,9 +43,11 @@ class TaskManagerService(
         tasks.putIfAbsent(task.requestId, task)
         logger.info("Created task $task: hash $hash and maxLength $maxLength")
         logger.info("With alphabet [$alphabet]")
-        subdivideTask(task)
-        logger.info("Subdivided task!")
-        sendOutSubTasks()
+        Thread {
+            subdivideTask(task)
+            logger.info("Subdivided task!")
+            sendOutSubTasks()
+        }.start()
         return task
     }
 
@@ -172,6 +176,9 @@ class TaskManagerService(
             worker.currentSubTask = subTask
             return response.statusCode.is2xxSuccessful
         } catch (e: BadRequestException) {
+            logger.error("Failed to delegate subTask: ${e.message}")
+            return false
+        } catch (e: ResourceAccessException) {
             logger.error("Failed to delegate subTask: ${e.message}")
             return false
         }
