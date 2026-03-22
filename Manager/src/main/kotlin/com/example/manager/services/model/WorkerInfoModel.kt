@@ -1,15 +1,12 @@
 package com.example.manager.services.model
 
-import com.example.manager.services.WorkerStatus
-import java.time.LocalDateTime
+import java.time.Instant
 import java.util.UUID
 
 class WorkerInfoModel (
     val id: UUID = UUID.randomUUID(),
     val address: String,
     val port: Int,
-    val registeredAt: LocalDateTime = LocalDateTime.now(),
-    var lastHeartbeat: LocalDateTime = LocalDateTime.now(),
-    var status: WorkerStatus,
+    var lastHeartbeat: Instant = Instant.now(),
     var currentSubTask: SubTaskModel? = null
 )

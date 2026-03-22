@@ -2,7 +2,7 @@ package com.example.worker.services
 
 import com.example.worker.controllers.dto.WorkerRegistrationRequestDTO
 import com.example.worker.controllers.dto.WorkerRegistrationResponseDTO
-import jakarta.annotation.PostConstruct
+import com.example.worker.services.models.SubTaskModel
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -16,17 +16,12 @@ class IdentificationManagerService {
     private val restTemplate = RestTemplate()
     private var registeredWorkerId: AtomicReference<UUID> = AtomicReference()
     private val logger = LoggerFactory.getLogger(IdentificationManagerService::class.java)
+    private var subTaskManagerService: SubTaskManagerService? = null
 
     @Value($$"${manager.port}")
     private lateinit var managerPort: String
     @Value($$"${endpoint.worker.registration}")
     private lateinit var registrationUrl: String
-
-    @PostConstruct
-    fun onStart() {
-        register()
-        logger.info("Worker service started!")
-    }
 
     fun isRegistered() = registeredWorkerId.get() != null
     fun getId() = registeredWorkerId.get()
@@ -50,9 +45,33 @@ class IdentificationManagerService {
             }
             registeredWorkerId.set(response.body?.workerId)
             logger.info("Successfully registered with id ${registeredWorkerId.get()}")
+            val subTaskRequestDTO = response.body?.subTask
+            if (subTaskRequestDTO != null) {
+                val status = subTaskManagerService?.acceptSubTask(
+                    SubTaskModel(
+                        subTaskId = subTaskRequestDTO.subTaskId,
+                        requestId = subTaskRequestDTO.requestId,
+                        hash = subTaskRequestDTO.hash,
+                        maxLength = subTaskRequestDTO.maxLength,
+                        alphabet = subTaskRequestDTO.alphabet,
+                        partStart = subTaskRequestDTO.partStart,
+                        partEnd = subTaskRequestDTO.partEnd
+                    )
+                )
+                if (status == true) {
+                    logger.info("Accepted subtask ${subTaskRequestDTO.subTaskId} upon registration")
+                } else {
+                    logger.warn("There was an error while accepting subtask ${subTaskRequestDTO.subTaskId} upon registration. Unregistering...")
+                    unregister()
+                }
+            }
         } catch (e: ResourceAccessException) {
             logger.error("Error while registering new worker: ${e.message}")
         }
 
+    }
+
+    fun setTaskManager(service: SubTaskManagerService) {
+        subTaskManagerService = service
     }
 }

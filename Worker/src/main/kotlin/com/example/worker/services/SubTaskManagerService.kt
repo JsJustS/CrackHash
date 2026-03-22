@@ -3,6 +3,7 @@ package com.example.worker.services
 import com.example.worker.controllers.dto.WorkerRegistrationResponseDTO
 import com.example.worker.controllers.dto.WorkerResultRequestDTO
 import com.example.worker.services.models.SubTaskModel
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -31,20 +32,35 @@ class SubTaskManagerService(
     private lateinit var resultUrl: String
 
     fun acceptSubTask(subTaskModel: SubTaskModel): Boolean {
-        if (currentSubTask.get() != null) {
+        if (hasTask()) {
             logger.warn("Worker has already accepted another task.")
             return false
         }
 
         currentSubTask.set(subTaskModel)
         results.clear()
+        if (identificationManagerService.isRegistered()) {
+            startTask()
+        }
+        return true
+    }
+
+    fun hasTask(): Boolean {
+        return currentSubTask.get() != null
+    }
+
+    fun startTask() {
         val t = Thread(
             this::executeCurrentTask,
             "task-executor-thread"
         )
         t.isDaemon = true
         t.start()
-        return true
+    }
+
+    @PostConstruct
+    fun onStart() {
+        identificationManagerService.setTaskManager(this)
     }
 
     private fun executeCurrentTask() {

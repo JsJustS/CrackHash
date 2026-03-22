@@ -5,14 +5,12 @@ import com.example.manager.services.model.SubTaskModel
 import com.example.manager.services.model.TaskModel
 import com.example.manager.services.model.WorkerInfoModel
 import com.example.manager.services.model.WorkerResultModel
+import jakarta.annotation.PostConstruct
 import org.apache.coyote.BadRequestException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.ResponseEntity
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
-import org.springframework.web.client.getForEntity
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -46,6 +44,11 @@ class TaskManagerService(
         logger.info("Subdivided task!")
         sendOutSubTasks()
         return task
+    }
+
+    @PostConstruct
+    fun onStart() {
+        workerManagerService.setTaskManagerService(this)
     }
 
     private fun subdivideTask(task: TaskModel) {
@@ -83,6 +86,10 @@ class TaskManagerService(
         if (tasks[subTask.requestId] != null) {
             queue.add(subTask)
         }
+    }
+
+    fun popSubTask(): SubTaskModel? {
+        return queue.poll()
     }
 
     private fun calculateTotalCombinations(
@@ -124,6 +131,9 @@ class TaskManagerService(
     }
 
     fun sendOutSubTasks() {
+        // перед отправкой чистим мертвецов
+        workerManagerService.checkWorkersHeartbeat()
+
         val workers = workerManagerService.getWorkers()
         var subTask = queue.poll()
         for (worker in workers) {
@@ -155,7 +165,7 @@ class TaskManagerService(
                 ),
                 Void::class.java
             )
-            logger.info("Sent subTask ${subTask.requestId} to ${worker.id} (${worker.port}) [${response.statusCode.value()}]")
+            logger.info("Sent subTask ${subTask.subTaskId} to ${worker.id} (${worker.port}) [${response.statusCode.value()}]")
             worker.currentSubTask = subTask
             return response.statusCode.is2xxSuccessful
         } catch (e: BadRequestException) {
