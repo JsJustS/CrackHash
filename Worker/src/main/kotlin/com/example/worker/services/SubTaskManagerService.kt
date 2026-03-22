@@ -76,6 +76,7 @@ class SubTaskManagerService(
         val partEnd = currentSubTask.get()!!.partEnd
 
         logger.info("Starting execution! Searching for $hash from $partStart to $partEnd")
+        logger.info("With alphabet [${String(alphabet)}]")
 
         for (length in 1..maxLength) {
             val totalCombinations = alphabet.size.toDouble().pow(length).toLong()
@@ -125,7 +126,7 @@ class SubTaskManagerService(
         var remaining = iteration
         val alphabetSize = alphabet.size
 
-        for (position in 0 until length - 1) {
+        for (position in 0 until length) {
             val charIndex = (remaining % alphabetSize).toInt()
             word[position] = alphabet[charIndex]
             remaining /= alphabetSize

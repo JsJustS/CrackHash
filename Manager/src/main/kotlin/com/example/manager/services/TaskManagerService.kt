@@ -40,6 +40,7 @@ class TaskManagerService(
         )
         tasks.putIfAbsent(task.requestId, task)
         logger.info("Created task $task: hash $hash and maxLength $maxLength")
+        logger.info("With alphabet [$alphabet]")
         subdivideTask(task)
         logger.info("Subdivided task!")
         sendOutSubTasks()
@@ -131,9 +132,6 @@ class TaskManagerService(
     }
 
     fun sendOutSubTasks() {
-        // перед отправкой чистим мертвецов
-        workerManagerService.checkWorkersHeartbeat()
-
         val workers = workerManagerService.getWorkers()
         var subTask = queue.poll()
         for (worker in workers) {

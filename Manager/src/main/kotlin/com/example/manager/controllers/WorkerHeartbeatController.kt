@@ -18,15 +18,16 @@ class WorkerHeartbeatController(
     fun updateHeartbeat(
         @RequestBody heartbeatRequest: WorkerHeartbeatRequestDTO
     ): ResponseEntity<Unit> {
-        val updated = workerManagerService.updateHeartbeatForWorker(
-            heartbeatRequest.id
-        )
-        if (updated) {return ResponseEntity.ok().build()}
-        // Если воркер отправил heartbeat и получил 404,
-        // Значит он был в летаргическом сне, и менеджер
-        // посчитал его мёртвым.
-        // Воркер должен обработать эту ситуацию и
-        // снова зарегистрироваться как новый воркер
-        return ResponseEntity.notFound().build()
+        return ResponseEntity.ok().build()
+//        val updated = workerManagerService.updateHeartbeatForWorker(
+//            heartbeatRequest.id
+//        )
+//        if (updated) {}
+//        // Если воркер отправил heartbeat и получил 404,
+//        // Значит он был в летаргическом сне, и менеджер
+//        // посчитал его мёртвым.
+//        // Воркер должен обработать эту ситуацию и
+//        // снова зарегистрироваться как новый воркер
+//        return ResponseEntity.notFound().build()
     }
 }
