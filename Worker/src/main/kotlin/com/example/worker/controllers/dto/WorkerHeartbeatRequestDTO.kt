@@ -1,4 +1,4 @@
-package com.example.manager.controllers.dto
+package com.example.worker.controllers.dto
 
 import java.util.UUID
 

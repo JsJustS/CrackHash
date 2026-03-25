@@ -1,7 +1,7 @@
 package com.example.manager.controllers
 
 import com.example.manager.controllers.dto.WorkerHeartbeatRequestDTO
-import com.example.manager.services.HeartbeatService
+import com.example.manager.services.WorkerManagerService
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -11,14 +11,14 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping($$"${endpoint.worker.heartbeat}")
 class WorkerHeartbeatController(
-    private val heartbeatService: HeartbeatService
+    private val workerManagerService: WorkerManagerService
 ) {
 
     @PostMapping
     fun updateHeartbeat(
         @RequestBody heartbeatRequest: WorkerHeartbeatRequestDTO
     ): ResponseEntity<Unit> {
-        val updated = heartbeatService.updateHeartbeatForWorker(
+        val updated = workerManagerService.updateHeartbeatForWorker(
             heartbeatRequest.id
         )
         if (updated) {return ResponseEntity.ok().build()}
