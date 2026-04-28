@@ -7,10 +7,14 @@ import com.example.manager.repositories.document.SubTaskDocument
 import com.example.manager.repositories.document.TaskDocument
 import com.example.manager.services.model.SubTaskModel
 import com.example.manager.services.model.WorkerResultModel
+import com.rabbitmq.client.Channel
 import org.slf4j.LoggerFactory
+import org.springframework.amqp.core.Message
 import org.springframework.amqp.rabbit.annotation.RabbitListener
 import org.springframework.amqp.rabbit.core.RabbitTemplate
+import org.springframework.amqp.support.AmqpHeaders
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.messaging.handler.annotation.Header
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -96,7 +100,54 @@ class TaskManagerService(
 
     fun getTask(requestId: UUID): TaskDocument? = taskRepository.findById(requestId).orElse(null)
 
-    @RabbitListener(queues = [RabbitMQConfig.QUEUE_SUBTASKS_RESULT])
+    @RabbitListener(queues = [RabbitMQConfig.QUEUE_DLQ_NOTIFICATION], ackMode = "MANUAL")
+    fun handleDLQ(
+        uuid: UUID,
+        channel : Channel,
+        @Header(AmqpHeaders.DELIVERY_TAG) deliveryTag: Long,
+        @Header(AmqpHeaders.REDELIVERED) redelivered: Boolean,
+        message: Message
+    ) {
+        try {
+            applyDLQ(uuid)
+            channel.basicAck(deliveryTag, false)
+        } catch (e: Exception) {
+            logger.error(e.message, e)
+            channel.basicNack(deliveryTag, false, false)
+        }
+    }
+
+    fun applyDLQ(uuid: UUID) {
+        subTaskRepository.findById(uuid).ifPresent { subTask ->
+            val task = taskRepository.findById(subTask.requestId).orElse(null)
+            if (task != null) {
+                taskRepository.save(
+                    task.copy(status = TaskStatus.ERROR)
+                )
+                logger.info("Task ${task.requestId} marked as ERROR due to subtask $uuid failure")
+            } else {
+                logger.warn("Task not found for subtask $uuid")
+            }
+        }
+    }
+
+    @RabbitListener(queues = [RabbitMQConfig.QUEUE_SUBTASKS_RESULT], ackMode = "MANUAL")
+    fun handleSubResult(
+        workerResultModel: WorkerResultModel,
+        channel: Channel,
+        @Header(AmqpHeaders.DELIVERY_TAG) deliveryTag: Long,
+        @Header(AmqpHeaders.REDELIVERED) redelivered: Boolean,
+        message: Message
+    ) {
+        try {
+            applySubResult(workerResultModel)
+            channel.basicAck(deliveryTag, false)
+        } catch (e: Exception) {
+            channel.basicNack(deliveryTag, false, false)
+            logger.error(e.message, e)
+        }
+    }
+
     fun applySubResult(workerResultModel: WorkerResultModel) {
         logger.info("Received result for subtask ${workerResultModel.subtaskId} from worker ${workerResultModel.workerId}")
 
@@ -150,7 +201,10 @@ class TaskManagerService(
                 partStart = subTask.partStart,
                 partEnd = subTask.partEnd
             )
-        )
+        ) { message ->
+            message.messageProperties.setHeader("x-retry-count", 0)
+            message
+        }
         logger.info("Sent subtask ${subTask.subTaskId} to RabbitMQ")
     }
 }

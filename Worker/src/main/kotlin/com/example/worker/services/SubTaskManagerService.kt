@@ -13,6 +13,7 @@ import org.springframework.messaging.handler.annotation.Header
 import org.springframework.stereotype.Service
 import java.security.MessageDigest
 import java.util.UUID
+import kotlin.math.log
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -29,35 +30,50 @@ class SubTaskManagerService(
     fun handleSubTask(
         subTask: SubTaskModel,
         channel: Channel,
-        deliveryTag: Long,
-        @Header(AmqpHeaders.DELIVERY_TAG) tag: Long,
+        @Header(AmqpHeaders.DELIVERY_TAG) deliveryTag: Long,
         @Header(AmqpHeaders.REDELIVERED) redelivered: Boolean,
         message: Message
     ) {
         try {
             val result = processSubTask(subTask)
-            sendResultToManager(subTask.requestId, subTask.subTaskId, result)
+            logger.info("subtask with id \"${subTask.subTaskId}\" finished: $result")
+            sendResultToManager(subTask.subTaskId, subTask.requestId, result)
+            logger.info("sent results for ${subTask.subTaskId}\"")
             channel.basicAck(deliveryTag, false)
         } catch (e: Exception) {
-            val retryCount = getRetryCountFromMessage(message)
+            logger.error(e.message, e)
+            val retryCount = (message.messageProperties.getHeader("x-retry-count") as? Int) ?: 0
             if (retryCount < 3) {
                 // repeat
-                channel.basicNack(deliveryTag, false, true)
+                logger.error("Sending subtask on repetition for the ${retryCount + 1} time")
+                rabbitTemplate.convertAndSend(
+                    message.messageProperties.receivedExchange,
+                    message.messageProperties.receivedRoutingKey,
+                    subTask,
+                    { msg ->
+                        msg.messageProperties.setHeader("x-retry-count", retryCount + 1)
+                        msg
+                    }
+                )
+                channel.basicAck(deliveryTag, false)
             } else {
                 // DLQ
+                logger.error("Sending subtask to DLQ")
+                rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.EXCHANGE_DLQ_NOTIFICATION,
+                    RabbitMQConfig.ROUTING_DLQ_NOTIFICATION,
+                    subTask.subTaskId,
+                    { msg ->
+                        msg.messageProperties.setHeader("x-retry-count", 0)
+                        msg
+                    }
+                )
                 channel.basicNack(deliveryTag, false, false)
             }
-            logger.error(e.message, e)
         }
     }
 
-    private fun getRetryCountFromMessage(message: Message): Int {
-        val xDeath = message.messageProperties.getHeader("x-death") as? List<Map<String, Any>>
-        if (xDeath.isNullOrEmpty()) return 0
-        return xDeath.sumOf { (it["count"] as? Int) ?: 0 }
-    }
-
-    private fun processSubTask(subTask : SubTaskModel): List<String> {
+    private fun processSubTask(subTask : SubTaskModel): List<String>{
         val alphabet = subTask.alphabet.toCharArray()
         val hash = subTask.hash
         val maxLength = subTask.maxLength
@@ -131,7 +147,7 @@ class SubTaskManagerService(
     private fun sendResultToManager(subTaskId : UUID, requestId : UUID, resultsToSend : List<String>) {
         rabbitTemplate.convertAndSend(
             RabbitMQConfig.EXCHANGE_SUBTASKS_RESULT,
-            RabbitMQConfig.ROUTING_SUBTASKS_REQUEST,
+            RabbitMQConfig.ROUTING_SUBTASKS_RESULT,
             WorkerResultModel(
                 registeredWorkerId,
                 requestId,

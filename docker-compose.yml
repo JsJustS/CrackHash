@@ -20,6 +20,7 @@ services:
 
   mongo-primary:
     image: mongo:latest
+    container_name: mongo-primary
     command: mongod --replSet rs0 --bind_ip_all --port 27017
     volumes:
       - mongo-primary-volume:/data/db
@@ -35,6 +36,7 @@ services:
 
   mongo-replica-1:
     image: mongo:latest
+    container_name: mongo-replica-1
     command: mongod --replSet rs0 --bind_ip_all --port 27017
     volumes:
       - mongo-replica-1-volume:/data/db
@@ -50,6 +52,7 @@ services:
 
   mongo-replica-2:
     image: mongo:latest
+    container_name: mongo-replica-2
     command: mongod --replSet rs0 --bind_ip_all --port 27017
     volumes:
       - mongo-replica-2-volume:/data/db

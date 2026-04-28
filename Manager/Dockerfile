@@ -2,7 +2,8 @@ FROM gradle:9.3.1-jdk21 AS build
 
 WORKDIR /app
 
-COPY Manager/build.gradle.kts Manager/settings.gradle.kts ./
+COPY Manager/build.gradle.kts ./
+COPY Manager/settings.gradle.kts ./
 COPY gradle ./gradle
 
 RUN gradle dependencies --no-daemon
