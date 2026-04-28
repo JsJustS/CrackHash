@@ -1,4 +1,4 @@
-package com.example.manager.services.model
+package com.example.worker.services.models
 
 import java.util.UUID
 

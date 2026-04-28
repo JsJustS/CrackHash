@@ -1,17 +1,18 @@
 package com.example.worker.services
 
-import com.example.worker.controllers.dto.WorkerRegistrationResponseDTO
-import com.example.worker.controllers.dto.WorkerResultRequestDTO
+import com.example.worker.configs.RabbitMQConfig
 import com.example.worker.services.models.SubTaskModel
-import jakarta.annotation.PostConstruct
+import com.example.worker.services.models.WorkerResultModel
+import com.rabbitmq.client.Channel
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
+import org.springframework.amqp.core.Message
+import org.springframework.amqp.rabbit.annotation.RabbitListener
+import org.springframework.amqp.rabbit.core.RabbitTemplate
+import org.springframework.amqp.support.AmqpHeaders
+import org.springframework.messaging.handler.annotation.Header
 import org.springframework.stereotype.Service
-import org.springframework.web.client.HttpClientErrorException
-import org.springframework.web.client.RestTemplate
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentSkipListSet
-import java.util.concurrent.atomic.AtomicReference
+import java.util.UUID
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -19,61 +20,51 @@ import kotlin.math.roundToInt
 
 @Service
 class SubTaskManagerService(
-    private val identificationManagerService: IdentificationManagerService
+    private val rabbitTemplate: RabbitTemplate
 ) {
-    private val restTemplate = RestTemplate()
+    private var registeredWorkerId: UUID = UUID.randomUUID()
     private val logger = LoggerFactory.getLogger(this::class.java)
-    private var currentSubTask: AtomicReference<SubTaskModel> = AtomicReference()
-    private val results = ConcurrentSkipListSet<String>()
 
-    @Value($$"${manager.port}")
-    private lateinit var managerPort: String
-    @Value($$"${endpoint.worker.result}")
-    private lateinit var resultUrl: String
-
-    fun acceptSubTask(subTaskModel: SubTaskModel): Boolean {
-        if (hasTask()) {
-            logger.warn("Worker has already accepted another task.")
-            return false
+    @RabbitListener(queues = [RabbitMQConfig.QUEUE_SUBTASKS_REQUEST], ackMode = "MANUAL")
+    fun handleSubTask(
+        subTask: SubTaskModel,
+        channel: Channel,
+        deliveryTag: Long,
+        @Header(AmqpHeaders.DELIVERY_TAG) tag: Long,
+        @Header(AmqpHeaders.REDELIVERED) redelivered: Boolean,
+        message: Message
+    ) {
+        try {
+            val result = processSubTask(subTask)
+            sendResultToManager(subTask.requestId, subTask.subTaskId, result)
+            channel.basicAck(deliveryTag, false)
+        } catch (e: Exception) {
+            val retryCount = getRetryCountFromMessage(message)
+            if (retryCount < 3) {
+                // repeat
+                channel.basicNack(deliveryTag, false, true)
+            } else {
+                // DLQ
+                channel.basicNack(deliveryTag, false, false)
+            }
+            logger.error(e.message, e)
         }
-
-        currentSubTask.set(subTaskModel)
-        results.clear()
-        if (identificationManagerService.isRegistered()) {
-            startTask()
-        }
-        return true
     }
 
-    fun hasTask(): Boolean {
-        return currentSubTask.get() != null
+    private fun getRetryCountFromMessage(message: Message): Int {
+        val xDeath = message.messageProperties.getHeader("x-death") as? List<Map<String, Any>>
+        if (xDeath.isNullOrEmpty()) return 0
+        return xDeath.sumOf { (it["count"] as? Int) ?: 0 }
     }
 
-    fun startTask() {
-        val t = Thread(
-            this::executeCurrentTask,
-            "task-executor-thread"
-        )
-        t.isDaemon = true
-        t.start()
-    }
+    private fun processSubTask(subTask : SubTaskModel): List<String> {
+        val alphabet = subTask.alphabet.toCharArray()
+        val hash = subTask.hash
+        val maxLength = subTask.maxLength
+        val partStart = subTask.partStart
+        val partEnd = subTask.partEnd
 
-    @PostConstruct
-    fun onStart() {
-        identificationManagerService.setTaskManager(this)
-    }
-
-    private fun executeCurrentTask() {
-        if (currentSubTask.get() == null) {
-            logger.warn("Worker is trying to execute a task but has not accepted anything yet.")
-            return
-        }
-
-        val alphabet = currentSubTask.get()!!.alphabet.toCharArray()
-        val hash = currentSubTask.get()!!.hash
-        val maxLength = currentSubTask.get()!!.maxLength
-        val partStart = currentSubTask.get()!!.partStart
-        val partEnd = currentSubTask.get()!!.partEnd
+        val result : MutableList<String> = mutableListOf()
 
         logger.info("Starting execution! Searching for $hash from $partStart to $partEnd")
         logger.info("With alphabet [${String(alphabet)}]")
@@ -88,13 +79,6 @@ class SubTaskManagerService(
             if (startInLength > endInLength || endInLength < 0) continue
 
             for (iteration in startInLength..endInLength) {
-                if (!identificationManagerService.isRegistered()) {
-                    logger.warn("Became unregistered while performing task, dropping...")
-                    currentSubTask.set(null)
-                    results.clear()
-                    return
-                }
-
                 val word = generateWord(iteration, length, alphabet)
                 val wordHash = md5(word)
 
@@ -104,13 +88,17 @@ class SubTaskManagerService(
                 }
 
                 if (wordHash == hash) {
-                    results.add(word)
+                    result.add(word)
                     logger.info("$word is valid")
+
+                    if (word == "bom") {
+                        throw RuntimeException("DLQ Simulating Exception")
+                    }
                 }
             }
         }
 
-        sendResultToManager()
+        return result
     }
 
     private fun getTotalCombinationsUpToLength(alphabetSize: Int, maxLength: Int): Long {
@@ -140,29 +128,16 @@ class SubTaskManagerService(
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    private fun sendResultToManager() {
-        try {
-            val resultsToSend = results.toList()
-            val subTaskId = currentSubTask.get().requestId
-
-            currentSubTask.set(null)
-            results.clear()
-
-            val response = restTemplate.postForEntity(
-                "http://manager:${managerPort}${resultUrl}",
-                WorkerResultRequestDTO(
-                    identificationManagerService.getId(),
-                    subTaskId,
-                    resultsToSend
-                ),
-                WorkerRegistrationResponseDTO::class.java
+    private fun sendResultToManager(subTaskId : UUID, requestId : UUID, resultsToSend : List<String>) {
+        rabbitTemplate.convertAndSend(
+            RabbitMQConfig.EXCHANGE_SUBTASKS_RESULT,
+            RabbitMQConfig.ROUTING_SUBTASKS_REQUEST,
+            WorkerResultModel(
+                registeredWorkerId,
+                requestId,
+                resultsToSend,
+                subTaskId
             )
-            if (response.statusCode.is2xxSuccessful) {
-                logger.info("Successfully sent results for $subTaskId")
-            }
-        } catch (e: HttpClientErrorException.NotFound) {
-            logger.warn("Could not send result to manager", e)
-            identificationManagerService.unregister()
-        }
+        )
     }
 }

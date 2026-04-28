@@ -2,12 +2,12 @@ FROM gradle:9.3.1-jdk21 AS build
 
 WORKDIR /app
 
-COPY build.gradle.kts settings.gradle.kts ./
+COPY Manager/build.gradle.kts Manager/settings.gradle.kts ./
 COPY gradle ./gradle
 
 RUN gradle dependencies --no-daemon
 
-COPY src ./src
+COPY Manager/src ./src
 
 RUN gradle bootJar --no-daemon
 

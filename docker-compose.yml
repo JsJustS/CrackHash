@@ -1,21 +1,117 @@
 version: '3.8'
 
 services:
+  rabbitmq:
+    image: rabbitmq:3.10.7-management
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    env_file:
+      - ./.env
+    volumes:
+      - rabbitmq-volume:/var/lib/rabbitmq
+    networks:
+      - crackhash-network
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-primary:
+    image: mongo:latest
+    command: mongod --replSet rs0 --bind_ip_all --port 27017
+    volumes:
+      - mongo-primary-volume:/data/db
+    networks:
+      - crackhash-network
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mongo-replica-1:
+    image: mongo:latest
+    command: mongod --replSet rs0 --bind_ip_all --port 27017
+    volumes:
+      - mongo-replica-1-volume:/data/db
+    networks:
+      - crackhash-network
+    ports:
+      - "27018:27017"
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mongo-replica-2:
+    image: mongo:latest
+    command: mongod --replSet rs0 --bind_ip_all --port 27017
+    volumes:
+      - mongo-replica-2-volume:/data/db
+    networks:
+      - crackhash-network
+    ports:
+      - "27019:27017"
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mongo-init:
+    image: mongo:latest
+    depends_on:
+      mongo-primary:
+        condition: service_healthy
+      mongo-replica-1:
+        condition: service_healthy
+      mongo-replica-2:
+        condition: service_healthy
+    networks:
+      - crackhash-network
+    restart: "no"
+    volumes:
+      - ./mongo-init.js:/mongo-init.js
+    command: >
+      mongosh --host mongo-primary:27017 /mongo-init.js
+
+  mongo-express:
+    image: mongo-express
+    env_file:
+      - ./.env
+    ports:
+      - "8081:8081"
+    networks:
+      - crackhash-network
+    depends_on:
+      mongo-init:
+          condition: service_completed_successfully
+
   manager:
     build:
-      context: ./Manager
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Manager/Dockerfile
     ports:
       - "8080:8080"
     env_file:
       - ./.env
     networks:
       - crackhash-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
 
   worker:
     build:
-      context: ./Worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Worker/Dockerfile
     ports:
       - ":8080"
     env_file:
@@ -23,10 +119,16 @@ services:
     networks:
       - crackhash-network
     depends_on:
-      manager:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     # docker-compose up --scale worker=5
 
 networks:
   crackhash-network:
     driver: bridge
+
+volumes:
+  rabbitmq-volume:
+  mongo-primary-volume:
+  mongo-replica-1-volume:
+  mongo-replica-2-volume:

@@ -1,102 +1,86 @@
 package com.example.manager.services
 
-import com.example.manager.controllers.dto.SubTaskRequestDTO
+import com.example.manager.configs.RabbitMQConfig
+import com.example.manager.repositories.SubTaskRepository
+import com.example.manager.repositories.TaskRepository
+import com.example.manager.repositories.document.SubTaskDocument
+import com.example.manager.repositories.document.TaskDocument
 import com.example.manager.services.model.SubTaskModel
-import com.example.manager.services.model.TaskModel
-import com.example.manager.services.model.WorkerInfoModel
 import com.example.manager.services.model.WorkerResultModel
-import jakarta.annotation.PostConstruct
-import org.apache.coyote.BadRequestException
 import org.slf4j.LoggerFactory
+import org.springframework.amqp.rabbit.annotation.RabbitListener
+import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
-import org.springframework.web.client.ResourceAccessException
-import org.springframework.web.client.RestTemplate
-import java.net.NoRouteToHostException
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.Int
+import kotlin.String
 import kotlin.math.pow
 
 @Service
 class TaskManagerService(
-    private val workerManagerService: WorkerManagerService
+    private val rabbitTemplate: RabbitTemplate,
+    private val taskRepository: TaskRepository,
+    private val subTaskRepository: SubTaskRepository
 ) {
-    private val restTemplate = RestTemplate()
     private val logger = LoggerFactory.getLogger(TaskManagerService::class.java)
-    private val tasks = ConcurrentHashMap<UUID, TaskModel>()
-    private val queue = ConcurrentLinkedQueue<SubTaskModel>()
 
     @Value($$"${endpoint.worker.internal}")
     private lateinit var internalUrl: String
+    @Value($$"${task.subdivision.size}")
+    private var taskSubdivisionSize: Int? = null
 
     fun createTask(
         hash: String,
         maxLength: Int,
         alphabet: String
-    ): TaskModel {
-        val task = TaskModel(
+    ): TaskDocument {
+        val task = TaskDocument(
             hash = hash,
             maxLength = maxLength,
             alphabet = alphabet,
         )
-        tasks.putIfAbsent(task.requestId, task)
-        logger.info("Created task $task: hash $hash and maxLength $maxLength")
+        val savedTask = taskRepository.save(task)
+        logger.info("Created task ${savedTask.requestId}: hash $hash and maxLength $maxLength")
         logger.info("With alphabet [$alphabet]")
-        Thread {
-            subdivideTask(task)
-            logger.info("Subdivided task!")
-            sendOutSubTasks()
-        }.start()
+        subdivideAndSendOut(task)
         return task
     }
 
-    @PostConstruct
-    fun onStart() {
-        workerManagerService.setTaskManagerService(this)
-    }
-
-    private fun subdivideTask(task: TaskModel) {
+    @Async
+    private fun subdivideAndSendOut(task: TaskDocument) {
+        logger.info("Subdividing task ${task.requestId}...")
         val totalCombinations = calculateTotalCombinations(
             task.alphabet,
             task.maxLength
         )
-        var workersCount = workerManagerService.getWorkers().count()
-        logger.info("Workers count $workersCount")
-        if (workersCount == 0) {
-            logger.warn("No workers found! No subdivision applied (the whole task will be forced onto first worker).")
-            workersCount = 1
-        }
-        val chunkSize = totalCombinations / workersCount
+        val chunkSize = totalCombinations / (taskSubdivisionSize?:1)
         logger.info("Chunk size $chunkSize")
 
-        for (i in 0 until workersCount) {
+        val subTaskDocs = mutableListOf<SubTaskDocument>()
+
+        for (i in 0 until (taskSubdivisionSize?:1)) {
             val partStart = i * chunkSize
-            val partEnd = if (i == workersCount - 1) totalCombinations else (i + 1) * chunkSize
-            val subtask = SubTaskModel(
+            val partEnd = if (i == (taskSubdivisionSize?:1) - 1) totalCombinations else (i + 1) * chunkSize
+            val subtask = SubTaskDocument(
                 requestId = task.requestId,
-                hash = task.hash,
-                maxLength = task.maxLength,
-                alphabet = task.alphabet,
                 partStart = partStart,
-                partEnd = partEnd,
-                progressAmount = 100.0 / workersCount
+                partEnd = partEnd
             )
-            queueSubTask(subtask)
-            logger.info("Created subtask ${subtask.subTaskId}: from $partStart to $partEnd (${subtask.hash}, ${subtask.maxLength})")
+            subTaskDocs.add(subtask)
+            logger.info("Created subtask ${subtask.subTaskId}: from $partStart to $partEnd (${task.hash}, ${task.maxLength})")
         }
-    }
+        val savedSubTasks = subTaskRepository.saveAll(subTaskDocs)
+        logger.info("Saved ${savedSubTasks.size} subtasks for task ${task.requestId}")
 
-    fun queueSubTask(subTask: SubTaskModel) {
-        logger.info("Trying to put subTask to queue: ${tasks[subTask.requestId] != null}")
-        if (tasks[subTask.requestId] != null) {
-            queue.add(subTask)
+        taskRepository.save(task.copy(status = TaskStatus.IN_PROGRESS))
+
+        savedSubTasks.forEach { subTask ->
+            sendSubTaskToRabbit(subTask, task)
+            subTaskRepository.save(subTask.copy(sent = true))
         }
-    }
-
-    fun popSubTask(): SubTaskModel? {
-        logger.info("queue subtask ${queue.size}")
-        return queue.poll()
+        logger.info("All subtasks for task ${task.requestId} have been sent.")
     }
 
     private fun calculateTotalCombinations(
@@ -110,77 +94,63 @@ class TaskManagerService(
         return total
     }
 
-    fun getTask(requestId: UUID): TaskModel? {
-        return tasks[requestId]
-    }
+    fun getTask(requestId: UUID): TaskDocument? = taskRepository.findById(requestId).orElse(null)
 
-    fun applySubResult(workerResultModel: WorkerResultModel): Boolean {
-        logger.info("Applying subResult...")
-        val worker = workerManagerService.getWorkerById(workerResultModel.workerId)
-        worker ?: return false
-        logger.info("worker: ${worker.id}")
-        val task = getTask(workerResultModel.requestId)
-        task ?: return false
-        logger.info("task: ${task.requestId}")
-        val subTask = worker.currentSubTask
-        subTask ?: return false
-        logger.info("subtask: ${subTask.subTaskId}")
+    @RabbitListener(queues = [RabbitMQConfig.QUEUE_SUBTASKS_RESULT])
+    fun applySubResult(workerResultModel: WorkerResultModel) {
+        logger.info("Received result for subtask ${workerResultModel.subtaskId} from worker ${workerResultModel.workerId}")
 
-        task.result.addAll(workerResultModel.result)
-        task.progress += subTask.progressAmount
-        if (task.progress == 100.0) {
-            task.status = TaskStatus.READY
+        val subTask = subTaskRepository.findById(workerResultModel.subtaskId).orElse(null)
+        if (subTask == null) {
+            logger.warn("Unknown subtask ${workerResultModel.subtaskId}, ignoring...")
+            return
+        }
+        if (subTask.finished) {
+            logger.warn("Subtask ${workerResultModel.subtaskId} already finished, ignoring duplicate result.")
+            return
         }
 
-        worker.currentSubTask = null
-        logger.info("Applied subResult for ${task.requestId} (${task.progress}/100.0)")
-        return true
+        val task = taskRepository.findById(subTask.requestId).orElse(null)
+        if (task == null) {
+            logger.warn("Parent task ${subTask.requestId} for subtask ${workerResultModel.subtaskId} not found!")
+            return
+        }
+
+        val newResult = task.result.toMutableList().apply {
+            addAll(workerResultModel.result)
+        }
+        val newProgress = task.progress + 100.0 / (taskSubdivisionSize?:1)
+        val newStatus = if (newProgress >= 100.0) TaskStatus.READY else TaskStatus.IN_PROGRESS
+
+        val updatedTask = task.copy(
+            result = newResult,
+            progress = newProgress.coerceAtMost(100.0),
+            status = newStatus
+        )
+        taskRepository.save(updatedTask)
+
+        subTaskRepository.save(subTask.copy(finished = true))
+
+        logger.info("Applied result for task ${updatedTask.requestId}: progress ${updatedTask.progress}%, status=${updatedTask.status}")
+        if (newStatus == TaskStatus.READY) {
+            logger.info("Task ${updatedTask.requestId} is fully completed. Result size: ${updatedTask.result.size}")
+        }
     }
 
-    fun sendOutSubTasks() {
-        val workers = workerManagerService.getWorkers()
-        var subTask = queue.poll()
-        for (worker in workers) {
-            if (worker.currentSubTask == null && subTask != null) {
-                val status = sendSubTaskToWorker(subTask, worker)
-                if (status) {
-                    subTask = queue.poll()
-                }
-            }
-        }
-        if (subTask != null) {
-            queueSubTask(subTask)
-        }
-    }
-
-    fun sendSubTaskToWorker(
-        subTask: SubTaskModel,
-        worker: WorkerInfoModel
-    ): Boolean {
-        try {
-            logger.info("Sending (${subTask.hash}, ${subTask.maxLength}) to ${worker.id}")
-            val response = restTemplate.postForEntity(
-                "http://${worker.address}:8080${internalUrl}",
-                SubTaskRequestDTO(
-                    subTaskId = subTask.subTaskId,
-                    requestId = subTask.requestId,
-                    hash = subTask.hash,
-                    maxLength = subTask.maxLength,
-                    alphabet = subTask.alphabet,
-                    partStart = subTask.partStart,
-                    partEnd = subTask.partEnd
-                ),
-                Void::class.java
+    fun sendSubTaskToRabbit(subTask: SubTaskDocument, task: TaskDocument) {
+        rabbitTemplate.convertAndSend(
+            RabbitMQConfig.EXCHANGE_SUBTASKS_REQUEST,
+            RabbitMQConfig.ROUTING_SUBTASKS_REQUEST,
+            SubTaskModel(
+                subTaskId = subTask.subTaskId,
+                requestId = subTask.requestId,
+                hash = task.hash,
+                maxLength = task.maxLength,
+                alphabet = task.alphabet,
+                partStart = subTask.partStart,
+                partEnd = subTask.partEnd
             )
-            logger.info("Sent subTask ${subTask.subTaskId} to ${worker.id} (${worker.port}) [${response.statusCode.value()}]")
-            worker.currentSubTask = subTask
-            return response.statusCode.is2xxSuccessful
-        } catch (e: BadRequestException) {
-            logger.error("Failed to delegate subTask: ${e.message}")
-            return false
-        } catch (e: ResourceAccessException) {
-            logger.error("Failed to delegate subTask: ${e.message}")
-            return false
-        }
+        )
+        logger.info("Sent subtask ${subTask.subTaskId} to RabbitMQ")
     }
 }
