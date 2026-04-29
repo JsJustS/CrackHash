@@ -2,6 +2,7 @@ package com.example.manager.configs
 
 import com.mongodb.ConnectionString
 import com.mongodb.MongoClientSettings
+import com.mongodb.ReadPreference
 import org.bson.UuidRepresentation
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Configuration
@@ -25,5 +26,6 @@ class MongoConfig : AbstractMongoClientConfiguration() {
         super.configureClientSettings(builder)
         builder.applyConnectionString(ConnectionString(uri))
         builder.uuidRepresentation(UuidRepresentation.STANDARD)
+        builder.readPreference(ReadPreference.primaryPreferred())
     }
 }
