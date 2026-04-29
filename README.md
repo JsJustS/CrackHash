@@ -1,8 +1,8 @@
 # CrackHash
 ## 1. Описание архитектуры
- Архитектура проекта состоит из двух приложений, [Manager](./Manager) и [Worker](./Worker).
+ Архитектура проекта состоит из четырёх приложений, [Manager](./Manager), [Worker](./Worker), база данных [MongoDB](https://www.mongodb.com/) и брокер [RabbitMQ](https://www.rabbitmq.com/).
  Первый отвечает за обработку запросов клиента, делегирование задач воркерам и агрегирование результатов.
- Второй отвечает за исполнение делегированных задач.
+ Второй отвечает за исполнение делегированных задач. В базе данных сохраняются текущие и исполненные задачи, брокер осуществляет коммуникацию между мменеджером и воркерами.
  
  Проект написан на Kotlin с фреймворком Spring.
 
@@ -24,47 +24,7 @@ docker-compose up -d --scale worker=3
 ```
 > GET http://manager/api/hash/status?requestId=...
 
-Ручка для клиента, по заданному uuid позволяет посмотреть статус выполнения задачи. 
-> POST http://manager/api/workers/register
-
-Ручка для воркера, приходя на этот эндпоинт конкретный воркер может зарегистрироваться, получить себе uuid и приступить к ожиданию задач от менеджера.
-```json
-{
- "status": true
-}
-```
-> POST http://manager/api/workers/health
-
-Ручка для воркера, сюда следует посылать пинги для уведомления менеджера о своей работопригодности. Если этого не делать, спустя ${HEARTBEAT_CHECK_INTERVAL} менеджер посчитает воркера мёртвым, после чего перераспределит делегированные ему задачи.
-```json
-{
- "id": "21391c47-9466-4832-92e2-682a48088de6"
-}
-```
-> http://manager/api/workers/result
-
-Ручка для воркера, сюда он шлёт результат своих вычислений.
-```json
-{
- "workerId": "21391c47-9466-4832-92e2-682a48088de6",
- "requestId": "ef240b8f-623a-418b-a7b8-5eb6658037cc",
- "result": ["abcd"]
-}
-```
-> http://worker/internal/api/worker/crack/hash
-
-Ручка для менеджера, сюда он отсылает конкретному воркеру задачу в следующем формате:
-```json
-{
- "subTaskId": "a96842f1-e7e8-43ae-8061-fcada68003c6",
- "requestId": "ef240b8f-623a-418b-a7b8-5eb6658037cc",
- "hash": "5f4dcc3b5aa765d61d8327deb882cf99",
- "maxLength": 4,
- "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz",
- "partStart": 0,
- "partEnd": 1000
-}
-```
+Ручка для клиента, по заданному uuid позволяет посмотреть статус выполнения задачи.
 ## 5. Используемые конфигурационные параметры.
 
 >MANAGER_PORT=8080
@@ -75,15 +35,20 @@ docker-compose up -d --scale worker=3
 Алфавит для поиска слова
 >USER_STATUS_ENDPOINT=/api/hash/status
 >USER_REQUEST_ENDPOINT=/api/hash/crack
->WORKER_REGISTRATION_ENDPOINT=/api/workers/register
->WORKER_HEARTBEAT_ENDPOINT=/api/workers/health
->WORKER_RESULT_ENDPOINT=/api/workers/result
->WORKER_INTERNAL_ENDPOINT=/internal/api/worker/crack/hash
 
 Эндпоинты в приложении
 
->HEARTBEAT_CHECK_INTERVAL=30000
+>TASK_SUBDIVISION_SIZE=10
 
->HEARTBEAT_SEND_INTERVAL=15000
+Количество подзадач, генерируемых из задачи
+>SPRING_RABBITMQ_HOST=rabbitmq
+>SPRING_RABBITMQ_PORT=5672
+>SPRING_RABBITMQ_USERNAME=guest
+>SPRING_RABBITMQ_PASSWORD=guest
 
-Значения для health чеков
+Настройки брокера
+>SPRING_MONGODB_URI=mongodb://mongo-primary:27017,mongo-replica-1:27017,mongo-replica-2:27017/crackhash?replicaSet=rs0
+>MONGO_INITDB_ROOT_USERNAME=admin
+>MONGO_INITDB_ROOT_PASSWORD=admin
+
+Настройки кластера БД
